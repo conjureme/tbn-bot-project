@@ -1,37 +1,50 @@
 import { Events, Message } from 'discord.js';
 import { Service } from '../utils/service';
 
+import { MemoryService } from '../utils/memoryService';
+
 export default {
   name: Events.MessageCreate,
   async execute(message: Message) {
     if (message.author.bot) return;
 
+    // initialize services
+    const memoryService = new MemoryService();
+
+    // add message to memory even if not mentioned
+    const memoryMessage = {
+      id: message.id,
+      channelId: message.channelId,
+      guildId: message.guildId,
+      author: message.author.username,
+      authorId: message.author.id,
+      content: message.content,
+      timestamp: message.createdAt,
+      isBot: false,
+    };
+
+    memoryService.addMessage(memoryMessage);
+
     if (!message.mentions.has(message.client.user!)) return;
 
     try {
-      const messages = await message.channel.messages.fetch({
-        limit: 5,
-        before: message.id,
-      });
-      const conversationHistory = messages
-        .reverse()
-        .map((msg) => ({
-          author: msg.author.username,
-          content: msg.content.replace(/<@!?\d+>/g, '').trim(), // remove mentions
-          timestamp: msg.createdAt,
-        }))
-        .filter((msg) => msg.content.length > 0);
+      // typing indicator
+      if ('send' in message.channel) {
+        message.channel.sendTyping();
+      }
 
-      conversationHistory.push({
-        author: message.author.username,
-        content: message.content.replace(/<@!?\d+>/g, '').trim(),
-        timestamp: message.createdAt,
-      });
+      // conversation memory
+      const contextData = memoryService.getContextForChannel(message.channelId);
+
+      console.log(
+        `using ${contextData.messages.length} messages (${contextData.estimatedTokens} tokens) for context`
+      );
 
       // generate response
       const service = new Service();
       const response = await service.generateResponse(
-        conversationHistory,
+        contextData.messages,
+        contextData.summary,
         message.author.username
       );
 
@@ -44,13 +57,42 @@ export default {
           return;
         }
 
+        // add bot response to memory
+        const botMessage = {
+          id: '',
+          channelId: message.channelId,
+          guildId: message.guildId,
+          author: message.client.user!.username,
+          authorId: message.client.user!.id,
+          content: response,
+          timestamp: new Date(),
+          isBot: true,
+        };
+
         if (response.length > 2000) {
           const chunks = response.match(/.{1,2000}/g) || [response];
-          for (const chunk of chunks) {
-            await message.channel.send(chunk);
+          for (let i = 0; i < chunks.length; i++) {
+            const sentMessage = await message.channel.send(chunks[i]);
+
+            // Add each chunk to memory
+            if (i === 0) {
+              botMessage.id = sentMessage.id;
+              botMessage.content = chunks[i];
+              memoryService.addMessage({ ...botMessage });
+            } else {
+              memoryService.addMessage({
+                ...botMessage,
+                id: sentMessage.id,
+                content: chunks[i],
+                timestamp: sentMessage.createdAt,
+              });
+            }
           }
         } else {
-          await message.channel.send(response);
+          const sentMessage = await message.channel.send(response);
+          botMessage.id = sentMessage.id;
+          botMessage.timestamp = sentMessage.createdAt;
+          memoryService.addMessage(botMessage);
         }
       }
     } catch (error) {

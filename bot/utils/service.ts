@@ -1,9 +1,15 @@
 import { ConfigService } from './configService';
 
-interface ConversationMessage {
+interface MemoryMessage {
+  id: string;
+  channelId: string;
+  guildId: string | null;
   author: string;
+  authorId: string;
   content: string;
   timestamp: Date;
+  isBot: boolean;
+  relevanceScore?: number;
 }
 
 interface APIRequest {
@@ -99,7 +105,8 @@ export class Service {
   }
 
   async generateResponse(
-    conversationHistory: ConversationMessage[],
+    conversationHistory: MemoryMessage[],
+    summary: string | undefined,
     currentUser: string
   ): Promise<string> {
     try {
@@ -110,6 +117,7 @@ export class Service {
       // build prompt using conversation history
       const prompt = this.buildPrompt(
         conversationHistory,
+        summary,
         currentUser,
         systemPrompt,
         formatting
@@ -123,9 +131,10 @@ export class Service {
         ...config,
       };
 
-      console.log('sending request to API...');
+      // debug log
+      console.log('sending request to API...', requestBody);
 
-      // make APi call
+      // make API call
       const response = await fetch(`${process.env.API_SERVER}/v1/completions`, {
         method: 'POST',
         headers: {
@@ -164,7 +173,8 @@ export class Service {
   }
 
   private buildPrompt(
-    conversationHistory: ConversationMessage[],
+    conversationHistory: MemoryMessage[],
+    summary: string | undefined,
     currentUser: string,
     systemPrompt: string,
     formatting: any
@@ -182,9 +192,21 @@ export class Service {
 
     let prompt = start_sequence + system_start + systemPrompt + system_end;
 
+    // add summary if it's available
+    if (summary) {
+      prompt += `\n\nConversation Summary: ${summary}`;
+    }
+
     // add conversation history
     for (const message of conversationHistory) {
-      prompt += user_start + `${message.author}: ${message.content}` + user_end;
+      const cleanContent = message.content.replace(/<@!?\d+>/g, '').trim();
+
+      if (message.isBot) {
+        prompt += assistant_start + cleanContent + assistant_end;
+      } else {
+        // include username for context in multi-user conversations
+        prompt += user_start + `${message.author}: ${cleanContent}` + user_end;
+      }
     }
 
     // add assistant start token to prompt
