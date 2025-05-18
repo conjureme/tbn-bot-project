@@ -91,7 +91,7 @@ interface APIResponse {
   };
 }
 
-export class service {
+export class Service {
   private configService: ConfigService;
 
   constructor() {
