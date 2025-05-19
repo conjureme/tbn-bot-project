@@ -64,7 +64,7 @@ export default {
           guildId: message.guildId,
           author: message.client.user!.username,
           authorId: message.client.user!.id,
-          content: response,
+          content: `${message.client.user!.username}: ${response}`,
           timestamp: new Date(),
           isBot: true,
         };
