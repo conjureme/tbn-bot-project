@@ -190,6 +190,8 @@ export class Service {
       end_sequence,
     } = formatting;
 
+    const botName = process.env.bot_name;
+
     let prompt = start_sequence + system_start + systemPrompt + system_end;
 
     // add summary if it's available
@@ -209,14 +211,16 @@ export class Service {
       }
     }
 
-    // add assistant start token to prompt
-    prompt += assistant_start;
+    // add assistant start token + bot's name to prompt
+    prompt += assistant_start + `${botName}:`;
 
     return prompt;
   }
 
   private cleanResponse(response: string, formatting: any): string {
     if (!response) return '';
+
+    const botName = process.env.bot_name;
 
     // remove all formatting tokens
     let cleaned = response;
@@ -234,6 +238,7 @@ export class Service {
       '<|im_start|>',
       '<|im_end|>',
       'AI Assistant:',
+      `${botName}:`,
       'user:',
       'system:',
       'assistant:',
