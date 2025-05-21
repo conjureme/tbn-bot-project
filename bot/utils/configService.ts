@@ -124,21 +124,21 @@ export class ConfigService {
     if (!fs.existsSync(this.aiConfigFile)) {
       const defaultConfig: AIConfig = {
         // token and length parameters
-        max_new_tokens: 600,
-        max_tokens: 600,
+        max_new_tokens: 512,
+        max_tokens: 512,
         min_length: 0,
         min_tokens: 0,
-        truncation_length: 32256,
-        num_ctx: 32256,
+        truncation_length: 2048,
+        num_ctx: 32768,
         n_predict: 600,
         num_predict: 600,
 
         // sampling parameters
-        temperature: 1.15,
-        top_p: 1,
+        temperature: 1.0,
+        top_p: 0.95,
         typical_p: 1,
         typical: 1,
-        min_p: 0.055,
+        min_p: 0.05,
         top_k: 0,
         top_a: 0,
 

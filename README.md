@@ -30,7 +30,7 @@ this project is still being fleshed-out, it is a passion project so the directio
 
 ## running the bot
 
-0. you need to choose a model to use. currently only OpenAI API completions is supported. text-generation-webui is being used during development, that would be my recommendation for local models. you'll also need an app made in discord's developer portal.
+0. you need to choose a model to use. currently only OpenAI API completions is supported. [koboldcpp](https://github.com/LostRuins/koboldcpp) is my recommendation! you'll also need an app made in discord's developer portal.
 
 1. clone repository:
 

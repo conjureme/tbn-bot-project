@@ -34,7 +34,10 @@ export default {
       }
 
       // conversation memory
-      const contextData = memoryService.getContextForChannel(message.channelId);
+      const contextData = memoryService.getContextForChannel(
+        message.channelId,
+        message.guildId
+      );
 
       console.log(
         `using ${contextData.messages.length} messages (${contextData.estimatedTokens} tokens) for context`
@@ -44,7 +47,6 @@ export default {
       const service = new Service();
       const response = await service.generateResponse(
         contextData.messages,
-        contextData.summary,
         message.author.username
       );
 
@@ -74,7 +76,7 @@ export default {
           for (let i = 0; i < chunks.length; i++) {
             const sentMessage = await message.channel.send(chunks[i]);
 
-            // Add each chunk to memory
+            // add each chunk to memory
             if (i === 0) {
               botMessage.id = sentMessage.id;
               botMessage.content = chunks[i];

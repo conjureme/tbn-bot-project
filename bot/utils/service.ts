@@ -106,7 +106,6 @@ export class Service {
 
   async generateResponse(
     conversationHistory: MemoryMessage[],
-    summary: string | undefined,
     currentUser: string
   ): Promise<string> {
     try {
@@ -117,7 +116,6 @@ export class Service {
       // build prompt using conversation history
       const prompt = this.buildPrompt(
         conversationHistory,
-        summary,
         currentUser,
         systemPrompt,
         formatting
@@ -174,7 +172,6 @@ export class Service {
 
   private buildPrompt(
     conversationHistory: MemoryMessage[],
-    summary: string | undefined,
     currentUser: string,
     systemPrompt: string,
     formatting: any
@@ -194,20 +191,20 @@ export class Service {
 
     let prompt = start_sequence + system_start + systemPrompt + system_end;
 
-    // add summary if it's available
-    if (summary) {
-      prompt += `\n\nConversation Summary: ${summary}`;
-    }
-
     // add conversation history
     for (const message of conversationHistory) {
-      const cleanContent = message.content.replace(/<@!?\d+>/g, '').trim();
+      // CHANGED: no longer removing mention tags, keeping them in the content
+      const content = message.content.trim();
 
       if (message.isBot) {
-        prompt += assistant_start + cleanContent + assistant_end;
+        prompt += assistant_start + content + assistant_end;
       } else {
-        // include username for context in multi-user conversations
-        prompt += user_start + `${message.author}: ${cleanContent}` + user_end;
+        // include username and ID for context in multi-user conversations
+        // format username <@userID> so the model can learn the mention syntax
+        prompt +=
+          user_start +
+          `${message.author} <@${message.authorId}>: ${content}` +
+          user_end;
       }
     }
 

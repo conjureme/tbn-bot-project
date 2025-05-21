@@ -63,7 +63,11 @@ export default {
         }
 
         case 'clear': {
-          memoryService.clearMemoryForChannel(interaction.channelId);
+          // Pass both channelId and guildId to the clearMemory function
+          memoryService.clearMemoryForChannel(
+            interaction.channelId,
+            interaction.guildId
+          );
           await interaction.reply({
             content: 'memory has been cleared for this channel!',
             flags: ['Ephemeral'],
@@ -72,9 +76,13 @@ export default {
         }
 
         case 'info': {
+          // Pass both channelId and guildId to getContextForChannel
           const context = memoryService.getContextForChannel(
-            interaction.channelId
+            interaction.channelId,
+            interaction.guildId
           );
+
+          // Create a basic info embed
           const embed = {
             title: 'channel memory info',
             fields: [
@@ -88,21 +96,23 @@ export default {
                 value: context.estimatedTokens.toString(),
                 inline: true,
               },
-              {
-                name: 'has summary',
-                value: context.summary ? 'yes' : 'no',
-                inline: true,
-              },
             ],
             color: 0x3340d1,
           };
 
-          if (context.summary) {
+          // If there are messages, add a sample of the most recent message
+          if (context.messages.length > 0) {
+            const latestMsg = context.messages[context.messages.length - 1];
+            const authorDisplay = latestMsg.isBot
+              ? 'Bot'
+              : `${latestMsg.author} <@${latestMsg.authorId}>`;
+
             embed.fields.push({
-              name: 'summary',
-              value:
-                context.summary.substring(0, 1000) +
-                (context.summary.length > 1000 ? '...' : ''),
+              name: 'most recent message',
+              value: `**${authorDisplay}**: ${latestMsg.content.substring(
+                0,
+                200
+              )}${latestMsg.content.length > 200 ? '...' : ''}`,
               inline: false,
             });
           }

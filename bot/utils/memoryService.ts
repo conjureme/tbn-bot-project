@@ -10,23 +10,18 @@ interface MemoryMessage {
   content: string;
   timestamp: Date;
   isBot: boolean;
-  relevanceScore?: number;
 }
 
 interface ConversationMemory {
   channelId: string;
+  guildId: string | null;
   messages: MemoryMessage[];
   lastUpdated: Date;
-  summary?: string;
-  keyTopics?: string[];
 }
 
 interface MemoryConfig {
   maxMessagesPerChannel: number;
   maxTokensInContext: number;
-  summaryThreshold: number; // messages before creating a summary
-  relevanceDecayHours: number; // hhow quickly messages become less relevant
-  enableSummarization: boolean;
 }
 
 export class MemoryService {
@@ -51,9 +46,6 @@ export class MemoryService {
     const defaultConfig: MemoryConfig = {
       maxMessagesPerChannel: 100,
       maxTokensInContext: 4000, // token estimate
-      summaryThreshold: 50,
-      relevanceDecayHours: 24,
-      enableSummarization: false,
     };
 
     if (fs.existsSync(this.configFile)) {
@@ -70,18 +62,41 @@ export class MemoryService {
     }
   }
 
+  private getMemoryFilePath(guildId: string | null, channelId: string): string {
+    // guildId is null in DMs
+    if (!guildId) {
+      const dmDir = path.join(this.memoryPath, 'dm');
+      if (!fs.existsSync(dmDir)) {
+        fs.mkdirSync(dmDir, { recursive: true });
+      }
+      return path.join(dmDir, `${channelId}.json`);
+    }
+
+    // create nested folder structure for channels within guilds
+    const guildDir = path.join(this.memoryPath, guildId);
+    if (!fs.existsSync(guildDir)) {
+      fs.mkdirSync(guildDir, { recursive: true });
+    }
+
+    return path.join(guildDir, `${channelId}.json`);
+  }
+
+  private getMemoryKey(guildId: string | null, channelId: string): string {
+    // create a unique key for the memory map
+    return guildId ? `${guildId}:${channelId}` : `dm:${channelId}`;
+  }
+
   private loadExistingMemories(): void {
     try {
-      const files = fs
+      const rootFiles = fs
         .readdirSync(this.memoryPath)
         .filter((f) => f.endsWith('.json'));
 
-      for (const file of files) {
+      for (const file of rootFiles) {
         const channelId = file.replace('.json', '');
         const filePath = path.join(this.memoryPath, file);
         const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
-        // convert timestamps back to objects
         data.lastUpdated = new Date(data.lastUpdated);
         data.messages = data.messages.map((msg: any) => ({
           ...msg,
@@ -89,6 +104,69 @@ export class MemoryService {
         }));
 
         this.conversationMemories.set(channelId, data);
+
+        if (data.guildId) {
+          this.saveMemoryForChannel(data.guildId, channelId);
+          fs.unlinkSync(filePath);
+        }
+      }
+
+      const guildDirs = fs
+        .readdirSync(this.memoryPath)
+        .filter(
+          (dir) =>
+            fs.statSync(path.join(this.memoryPath, dir)).isDirectory() &&
+            dir !== 'dm'
+        );
+
+      // process guild files
+      for (const guildId of guildDirs) {
+        const guildPath = path.join(this.memoryPath, guildId);
+        const channelFiles = fs
+          .readdirSync(guildPath)
+          .filter((f) => f.endsWith('.json'));
+
+        for (const file of channelFiles) {
+          const channelId = file.replace('.json', '');
+          const filePath = path.join(guildPath, file);
+          const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+          data.lastUpdated = new Date(data.lastUpdated);
+          data.messages = data.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp),
+          }));
+
+          data.guildId = guildId;
+
+          const memoryKey = this.getMemoryKey(guildId, channelId);
+          this.conversationMemories.set(memoryKey, data);
+        }
+      }
+
+      // handle DM files
+      const dmPath = path.join(this.memoryPath, 'dm');
+      if (fs.existsSync(dmPath)) {
+        const dmFiles = fs
+          .readdirSync(dmPath)
+          .filter((f) => f.endsWith('.json'));
+
+        for (const file of dmFiles) {
+          const channelId = file.replace('.json', '');
+          const filePath = path.join(dmPath, file);
+          const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+          data.lastUpdated = new Date(data.lastUpdated);
+          data.messages = data.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp),
+          }));
+
+          data.guildId = null;
+
+          const memoryKey = this.getMemoryKey(null, channelId);
+          this.conversationMemories.set(memoryKey, data);
+        }
       }
 
       console.log(
@@ -99,69 +177,68 @@ export class MemoryService {
     }
   }
 
-  private saveMemoryForChannel(channelId: string): void {
-    const memory = this.conversationMemories.get(channelId);
+  private saveMemoryForChannel(
+    guildId: string | null,
+    channelId: string
+  ): void {
+    const memoryKey = this.getMemoryKey(guildId, channelId);
+    const memory = this.conversationMemories.get(memoryKey);
+
     if (!memory) return;
 
     try {
-      const filePath = path.join(this.memoryPath, `${channelId}.json`);
+      const filePath = this.getMemoryFilePath(guildId, channelId);
       fs.writeFileSync(filePath, JSON.stringify(memory, null, 2));
     } catch (error) {
       console.error(
-        `error when saving memory for channel ${channelId}:`,
+        `error when saving memory for channel ${guildId}:${channelId}:`,
         error
       );
     }
   }
 
   addMessage(message: MemoryMessage): void {
-    const { channelId } = message;
+    const { channelId, guildId } = message;
+    const memoryKey = this.getMemoryKey(guildId, channelId);
 
-    let memory = this.conversationMemories.get(channelId);
+    let memory = this.conversationMemories.get(memoryKey);
     if (!memory) {
       memory = {
         channelId,
+        guildId,
         messages: [],
         lastUpdated: new Date(),
-        keyTopics: [],
       };
-      this.conversationMemories.set(channelId, memory);
+      this.conversationMemories.set(memoryKey, memory);
     }
 
-    // add new message
     memory.messages.push(message);
     memory.lastUpdated = new Date();
 
-    // trim old messages
     if (memory.messages.length > this.config.maxMessagesPerChannel) {
-      // remove oldest messages but keep summary
       const excessMessages =
         memory.messages.length - this.config.maxMessagesPerChannel;
       memory.messages.splice(0, excessMessages);
     }
 
-    // check if summary is needed
-    if (
-      this.config.enableSummarization &&
-      memory.messages.length >= this.config.summaryThreshold &&
-      !memory.summary
-    ) {
-      this.createSummary(channelId);
-    }
-
-    // save to folder
-    this.saveMemoryForChannel(channelId);
+    this.saveMemoryForChannel(guildId, channelId);
   }
 
   getContextForChannel(
     channelId: string,
+    guildId: string | null = null,
     maxTokens?: number
   ): {
     messages: MemoryMessage[];
-    summary?: string;
     estimatedTokens: number;
   } {
-    const memory = this.conversationMemories.get(channelId);
+    const memoryKey = this.getMemoryKey(guildId, channelId);
+    let memory = this.conversationMemories.get(memoryKey);
+
+    if (!memory && !guildId) {
+      memory = this.conversationMemories.get(channelId);
+    }
+
     if (!memory) {
       return { messages: [], estimatedTokens: 0 };
     }
@@ -170,88 +247,58 @@ export class MemoryService {
     let estimatedTokens = 0;
     const selectedMessages: MemoryMessage[] = [];
 
-    // add summary tokens if available
-    if (memory.summary) {
-      estimatedTokens += this.estimateTokens(memory.summary);
-    }
+    const sortedMessages = [...memory.messages].sort(
+      (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+    );
 
-    // Aad messages from most recent and calculate relevancy
-    const now = new Date();
-    const sortedMessages = memory.messages
-      .map((msg) => ({
-        ...msg,
-        relevanceScore: this.calculateRelevance(msg, now),
-      }))
-      .sort((a, b) => b.relevanceScore! - a.relevanceScore!);
-
-    for (const message of sortedMessages) {
+    for (let i = sortedMessages.length - 1; i >= 0; i--) {
+      const message = sortedMessages[i];
       const messageTokens = this.estimateTokens(message.content);
 
       if (estimatedTokens + messageTokens <= targetTokens) {
-        selectedMessages.push(message);
+        selectedMessages.unshift(message);
         estimatedTokens += messageTokens;
       } else {
         break;
       }
     }
 
-    // sort selected messages chronologically
-    selectedMessages.sort(
-      (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
-    );
-
     return {
       messages: selectedMessages,
-      summary: memory.summary,
       estimatedTokens,
     };
   }
 
-  private calculateRelevance(message: MemoryMessage, now: Date): number {
-    const hoursAgo =
-      (now.getTime() - message.timestamp.getTime()) / (1000 * 60 * 60);
-
-    // relevancy decrease with time
-    let relevance = Math.max(0, 1 - hoursAgo / this.config.relevanceDecayHours);
-
-    // relevancy boosts
-    // boost relevancy for any bot messages
-    if (message.isBot) {
-      relevance *= 1.5;
-    }
-
-    // longer messages
-    if (message.content.length > 100) {
-      relevance *= 1.2;
-    }
-
-    // messages with questions
-    if (message.content.includes('?')) {
-      relevance *= 1.3;
-    }
-
-    return relevance;
-  }
-
   private estimateTokens(text: string): number {
-    // rough estimate of 4 chars per token
     return Math.ceil(text.length / 4);
   }
 
-  private async createSummary(channelId: string): Promise<void> {
-    // TODO: should make API call to write a summary
-    // for now, functionality disabled
-  }
+  clearMemoryForChannel(
+    channelId: string,
+    guildId: string | null = null
+  ): void {
+    const memoryKey = this.getMemoryKey(guildId, channelId);
+    this.conversationMemories.delete(memoryKey);
 
-  clearMemoryForChannel(channelId: string): void {
-    this.conversationMemories.delete(channelId);
+    if (!guildId) {
+      this.conversationMemories.delete(channelId);
+    }
 
-    const filePath = path.join(this.memoryPath, `${channelId}.json`);
+    const filePath = this.getMemoryFilePath(guildId, channelId);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
 
-    console.log(`cleared memory for channel ${channelId}`);
+    if (!guildId) {
+      const legacyPath = path.join(this.memoryPath, `${channelId}.json`);
+      if (fs.existsSync(legacyPath)) {
+        fs.unlinkSync(legacyPath);
+      }
+    }
+
+    console.log(
+      `cleared memory for channel ${guildId || 'unknown'}:${channelId}`
+    );
   }
 
   getMemoryStats(): {
