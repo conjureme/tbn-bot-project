@@ -89,6 +89,7 @@ npm run dev
 - [ ] voice channel integration
 - [ ] vision support
 - [ ] lorebooks- provide model with additional context, server emotes, etc.
+- [ ] importing character cards
 
 ## project structure
 

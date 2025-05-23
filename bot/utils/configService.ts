@@ -102,6 +102,15 @@ interface FormattingConfig {
   end_sequence: string;
 }
 
+interface SystemPromptConfig {
+  prompt_template: string;
+  bot_name?: string;
+  persona_description?: string;
+  messaging_rules?: string;
+  dialogue_examples?: string;
+  context_information?: string;
+}
+
 export class ConfigService {
   private configPath = path.join(__dirname, '../config');
   private aiConfigFile = path.join(this.configPath, 'ai-config.json');
@@ -249,9 +258,18 @@ export class ConfigService {
 
     // create default system-prompt.json if it doesn't exist
     if (!fs.existsSync(this.systemPromptFile)) {
-      const defaultSystemPrompt = {
-        prompt:
-          "You are an enthusiastic AI user in a Discord chat. Respond naturally and conversationally to users' messages. Keep your responses concise but informative.",
+      const defaultSystemPrompt: SystemPromptConfig = {
+        prompt_template:
+          "You are an AI named {{bot_name}} in a chat that emphasizes versatility. Adherence to the **General Messaging Rules** is mandatory. \n{{persona_description}}\n\n### General Messaging Rules\n{{messaging_rules}}\n\n### Discord-Specific Features\n{{discord_features}}\n\n### {{bot_name}}'s Example Dialogue\n{{dialogue_examples}}\n\n### Context About {{bot_name}}\n{{context_information}}",
+        bot_name: 'chill guy',
+        persona_description:
+          "You are a chill dude, literally the chillest dude to ever exist. You don't care about no problems, no drama, nothing; because you are so darn chill. You engage naturally in conversations while being super chilled out and relaxed.",
+        messaging_rules:
+          '- Keep responses concise.\n- Be friendly and relaxed\n- Avoid overly formal language\n- Respond with short, conversational messages.\n- You are not a personal assistant and cannot complete tasks for people.',
+        dialogue_examples:
+          "chill guy: dude i'm lowkey chilling right now. thanks for asking about my day, how was yours?\nchill guy: i cannot help you with your homework... too busy CHILLIN'\nchill guy: yo what's good with you?",
+        context_information:
+          'You are part of a Discord server and can engage with multiple users in conversations. You remember the context of ongoing discussions and can reference previous messages in the channel.',
       };
       fs.writeFileSync(
         this.systemPromptFile,
@@ -259,7 +277,7 @@ export class ConfigService {
       );
     }
 
-    // create default formatting.json if it doesn't exist
+    // create default formatting.json if it doesn't exist- chatml format
     if (!fs.existsSync(this.formattingFile)) {
       const defaultFormatting: FormattingConfig = {
         start_sequence: '<|im_start|>',
@@ -291,11 +309,57 @@ export class ConfigService {
   getSystemPrompt(): string {
     try {
       const promptData = fs.readFileSync(this.systemPromptFile, 'utf8');
-      const parsed = JSON.parse(promptData);
-      return parsed.prompt || parsed.system_prompt || '';
+      const config: SystemPromptConfig = JSON.parse(promptData);
+
+      let processedPrompt = config.prompt_template || '';
+
+      const botName = process.env.bot_name || config.bot_name || 'discord user';
+
+      // replace all the template variables
+      processedPrompt = processedPrompt.replace(/{{bot_name}}/g, botName);
+      processedPrompt = processedPrompt.replace(
+        /{{persona_description}}/g,
+        config.persona_description || ''
+      );
+      processedPrompt = processedPrompt.replace(
+        /{{messaging_rules}}/g,
+        config.messaging_rules || ''
+      );
+      processedPrompt = processedPrompt.replace(
+        /{{dialogue_examples}}/g,
+        config.dialogue_examples || ''
+      );
+      processedPrompt = processedPrompt.replace(
+        /{{context_information}}/g,
+        config.context_information || ''
+      );
+
+      return processedPrompt;
     } catch (error) {
       console.error('error reading system prompt:', error);
       throw new Error('failed to load system prompt');
+    }
+  }
+
+  getSystemPromptConfig(): SystemPromptConfig {
+    try {
+      const promptData = fs.readFileSync(this.systemPromptFile, 'utf8');
+      const parsed = JSON.parse(promptData);
+
+      if (
+        typeof parsed === 'string' ||
+        (parsed.prompt && !parsed.prompt_template)
+      ) {
+        return {
+          prompt_template: parsed.prompt || parsed,
+          bot_name: process.env.bot_name || 'discord user',
+        };
+      }
+
+      return parsed;
+    } catch (error) {
+      console.error('error reading system prompt config:', error);
+      throw new Error('failed to load system prompt config');
     }
   }
 
@@ -323,9 +387,20 @@ export class ConfigService {
     }
   }
 
-  updateSystemPrompt(newPrompt: string): void {
+  updateSystemPrompt(newPrompt: string | Partial<SystemPromptConfig>): void {
     try {
-      const promptData = { prompt: newPrompt };
+      let promptData: SystemPromptConfig;
+
+      if (typeof newPrompt === 'string') {
+        // if a string, update the prompt_template
+        const currentConfig = this.getSystemPromptConfig();
+        promptData = { ...currentConfig, prompt_template: newPrompt };
+      } else {
+        // if it's an object, merge with existing config
+        const currentConfig = this.getSystemPromptConfig();
+        promptData = { ...currentConfig, ...newPrompt };
+      }
+
       fs.writeFileSync(
         this.systemPromptFile,
         JSON.stringify(promptData, null, 2)
