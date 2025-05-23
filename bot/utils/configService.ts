@@ -313,7 +313,7 @@ export class ConfigService {
 
       let processedPrompt = config.prompt_template || '';
 
-      const botName = process.env.bot_name || config.bot_name || 'discord user';
+      const botName = config.bot_name || 'discord user';
 
       // replace all the template variables
       processedPrompt = processedPrompt.replace(/{{bot_name}}/g, botName);
@@ -352,7 +352,7 @@ export class ConfigService {
       ) {
         return {
           prompt_template: parsed.prompt || parsed,
-          bot_name: process.env.bot_name || 'discord user',
+          bot_name: 'discord user',
         };
       }
 

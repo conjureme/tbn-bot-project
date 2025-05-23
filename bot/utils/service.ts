@@ -111,6 +111,7 @@ export class Service {
     try {
       const config = this.configService.getConfig();
       const systemPrompt = this.configService.getSystemPrompt();
+
       const formatting = this.configService.getFormatting();
 
       // build prompt using conversation history
@@ -187,7 +188,8 @@ export class Service {
       end_sequence,
     } = formatting;
 
-    const botName = process.env.bot_name;
+    const systemPromptConfig = this.configService.getSystemPromptConfig();
+    const botName = systemPromptConfig.bot_name || 'chill guy';
 
     let prompt = start_sequence + system_start + systemPrompt + system_end;
 
@@ -217,7 +219,8 @@ export class Service {
   private cleanResponse(response: string, formatting: any): string {
     if (!response) return '';
 
-    const botName = process.env.bot_name;
+    const systemPromptConfig = this.configService.getSystemPromptConfig();
+    const botName = systemPromptConfig.bot_name || 'chill guy';
 
     // remove all formatting tokens
     let cleaned = response;
